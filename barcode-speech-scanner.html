@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <title>Barcode and Speech Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #startButton {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 20px 0;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        #stopButton {
+            background-color: #f44336;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 20px 0;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        #status {
+            margin: 10px 0;
+            font-weight: bold;
+            color: #333;
+        }
+        #result {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+            min-height: 50px;
+        }
+        .scanner-container {
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            position: relative;
+            display: none;
+        }
+        .home {
+            display: block;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .barcode-polygon {
+            fill: rgba(255, 0, 0, 0.2);
+            stroke: red;
+            stroke-width: 2;
+        }
+        .loading {
+            margin: 10px 0;
+        }
+        .loading::after {
+            content: "⏳";
+            animation: pulse 1.5s infinite;
+            font-size: 24px;
+        }
+        select {
+            padding: 8px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="home">
+        <h1>Barcode and Voice Recognition</h1>
+        <p>Press the button below to start scanning barcodes and listening for voice input.</p>
+        <button id="startButton">Start Recognition</button>
+        <div id="status">Checking capabilities...</div>
+    </div>
+    
+    <div class="scanner-container">
+        <button id="stopButton">Stop Recognition</button>
+        <div class="loading" id="loading"></div>
+        <select id="cameraSelect"></select>
+        <div id="videoContainer">
+            <video id="video" class="camera" autoplay playsinline></video>
+            <svg class="overlay" viewBox="0 0 1280 720"></svg>
+        </div>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const videoElement = document.getElementById('video');
+        const loadingDiv = document.getElementById('loading');
+        const scannerContainer = document.querySelector('.scanner-container');
+        const home = document.querySelector('.home');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const svgOverlay = document.querySelector('svg');
+        
+        // Global variables
+        let localStream;
+        let barcodeDetector;
+        let recognitionInterval;
+        let isRecognizing = false;
+        let speechRecognition;
+        let decoding = false;
+        
+        // Initialize on load
+        window.addEventListener('load', initApp);
+        
+        function initApp() {
+            // Set up event listeners
+            startButton.addEventListener('click', startRecognition);
+            stopButton.addEventListener('click', stopRecognition);
+            cameraSelect.addEventListener('change', onCameraChanged);
+            videoElement.addEventListener('loadeddata', onVideoPlayed);
+            
+            // Initialize capabilities
+            checkCapabilities();
+            
+            // Initialize result div
+            resultDiv.style.display = "block";
+            resultDiv.innerHTML = "<p>Recognition results will appear here.</p>";
+            
+            // Add debug button for mobile testing
+            const debugBtn = document.createElement('button');
+            debugBtn.textContent = "Test Barcode Detection";
+            debugBtn.style.backgroundColor = "#ff9800";
+            debugBtn.style.color = "white";
+            debugBtn.style.padding = "10px";
+            debugBtn.style.border = "none";
+            debugBtn.style.borderRadius = "5px";
+            debugBtn.style.margin = "10px";
+            debugBtn.onclick = testBarcodeDetection;
+            document.body.appendChild(debugBtn);
+        }
+        
+        // Test function to check if barcode detection works
+        async function testBarcodeDetection() {
+            statusDiv.textContent = "Testing barcode detection capability...";
+            
+            try {
+                if (!('BarcodeDetector' in window)) {
+                    alert("BarcodeDetector API is not available in this browser");
+                    return;
+                }
+                
+                const formats = await BarcodeDetector.getSupportedFormats();
+                alert("Supported barcode formats: " + formats.join(", "));
+                
+                // Create a test QR code
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 200;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = "white";
+                ctx.fillRect(0, 0, 200, 200);
+                ctx.fillStyle = "black";
+                ctx.fillRect(50, 50, 100, 100);
+                
+                // Try to detect (will fail, but tests if API is working)
+                const detector = new BarcodeDetector();
+                try {
+                    const result = await detector.detect(canvas);
+                    alert("Detection test completed. Results: " + JSON.stringify(result));
+                } catch (e) {
+                    alert("Detection test error: " + e.message);
+                }
+            } catch (e) {
+                alert("Barcode test error: " + e.message);
+            }
+        }
+        
+        async function checkCapabilities() {
+            statusDiv.textContent = "Checking capabilities...";
+            
+            // Check speech recognition
+            const speechSupported = checkSpeechRecognitionSupport();
+            
+            // Check barcode detection with fallback options
+            let barcodeSupported = false;
+            try {
+                if ('BarcodeDetector' in window) {
+                    try {
+                        // Some browsers have BarcodeDetector but getSupportedFormats throws an error
+                        const formats = await BarcodeDetector.getSupportedFormats();
+                        barcodeSupported = formats.length > 0;
+                        console.log("Supported barcode formats:", formats);
+                    } catch (e) {
+                        console.log("getSupportedFormats failed, trying to create detector anyway");
+                        // Try creating a detector anyway, some implementations don't support getSupportedFormats
+                        const testDetector = new BarcodeDetector();
+                        barcodeSupported = true;
+                    }
+                    
+                    if (barcodeSupported) {
+                        // Create with specific formats if possible
+                        try {
+                            barcodeDetector = new BarcodeDetector({
+                                formats: ['ean_13', 'qr_code']
+                            });
+                        } catch (e) {
+                            // Fall back to default constructor if format specification fails
+                            console.log("Format specification failed, using default detector");
+                            barcodeDetector = new BarcodeDetector();
+                        }
+                        console.log("BarcodeDetector initialized");
+                    }
+                }
+                
+                // Use a simple fallback approach for browsers without native support
+                if (!barcodeSupported) {
+                    console.log("Native BarcodeDetector not supported");
+                    // Create a very simple mock implementation that does nothing
+                    // This allows code to run without errors, but barcode detection won't work
+                    window.BarcodeDetector = class {
+                        async detect() {
+                            console.log("Mock BarcodeDetector called");
+                            return [];
+                        }
+                    };
+                    barcodeDetector = new BarcodeDetector();
+                    // Let user know
+                    alert("Barcode detection is not supported by your browser. Only voice recognition will be available.");
+                }
+            } catch (error) {
+                console.error("Error checking barcode capabilities:", error);
+            }
+            
+            // Update UI based on capabilities
+            if (!barcodeSupported && !speechSupported) {
+                statusDiv.textContent = "Neither barcode detection nor speech recognition is supported in your browser.";
+                startButton.disabled = true;
+                startButton.style.backgroundColor = '#cccccc';
+            } else if (!barcodeSupported) {
+                statusDiv.textContent = "Barcode detection not supported. Only speech recognition will be used.";
+            } else if (!speechSupported) {
+                statusDiv.textContent = "Speech recognition not supported. Only barcode detection will be used.";
+            } else {
+                statusDiv.textContent = "Ready! Both barcode detection and speech recognition are available.";
+            }
+        }
+        
+        // Check Speech Recognition support
+        function checkSpeechRecognitionSupport() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.log('Speech Recognition is not supported by this browser.');
+                return false;
+            }
+            return true;
+        }
+        
+        // Initialize speech recognition
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return null;
+            
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = navigator.language || 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+            
+            recognition.onresult = (event) => {
+                const speechResult = event.results[0][0].transcript;
+                console.log("Speech recognition result:", speechResult);
+                displayResult('Voice Input', speechResult);
+                // Continue scanning a bit longer in case user wants to try barcode too
+                setTimeout(() => {
+                    if (isRecognizing) {
+                        stopRecognition();
+                    }
+                }, 3000);
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                statusDiv.textContent = 'Speech recognition error: ' + event.error;
+            };
+            
+            recognition.onend = () => {
+                // Only restart if we're still in recognition mode
+                if (isRecognizing) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.error("Error restarting speech recognition:", e);
+                    }
+                }
+            };
+            
+            return recognition;
+        }
+        
+        // Load camera devices and start camera
+        function loadDevicesAndPlay() {
+            const constraints = {video: true, audio: false};
+            
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    localStream = stream;
+                    cameraSelect.innerHTML = "";
+                    
+                    navigator.mediaDevices.enumerateDevices()
+                        .then(devices => {
+                            const cameraDevices = [];
+                            let count = 0;
+                            let defaultIndex = 0;
+                            
+                            devices.forEach((device, i) => {
+                                if (device.kind === 'videoinput') {
+                                    cameraDevices.push(device);
+                                    const label = device.label || `Camera ${count++}`;
+                                    cameraSelect.add(new Option(label, device.deviceId));
+                                    
+                                    // Try to select back camera on mobile
+                                    if (label.toLowerCase().includes("back")) {
+                                        defaultIndex = cameraDevices.length - 1;
+                                    }
+                                }
+                            });
+                            
+                            if (cameraDevices.length > 0) {
+                                cameraSelect.selectedIndex = defaultIndex;
+                                play(cameraDevices[defaultIndex].deviceId);
+                            } else {
+                                console.error("No camera detected");
+                                statusDiv.textContent = "No camera detected. Using speech recognition only.";
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Error enumerating devices:', err);
+                            statusDiv.textContent = 'Error accessing camera devices: ' + err.message;
+                        });
+                })
+                .catch(err => {
+                    console.error('Error accessing camera:', err);
+                    statusDiv.textContent = 'Error accessing camera: ' + err.message;
+                    
+                    // Start speech recognition even if camera fails
+                    if (speechRecognition) {
+                        try {
+                            speechRecognition.start();
+                            statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
+                        } catch (e) {
+                            console.error("Error starting speech recognition:", e);
+                        }
+                    }
+                });
+        }
+        
+        // Play video from selected camera
+        function play(deviceId) {
+            stop();
+            const constraints = deviceId ? 
+                { video: { deviceId: deviceId }, audio: false } : 
+                { video: true, audio: false };
+            
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    localStream = stream;
+                    videoElement.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error('Error accessing camera:', err);
+                    statusDiv.textContent = 'Error accessing camera: ' + err.message;
+                });
+        }
+        
+        // Handle camera selection change
+        function onCameraChanged() {
+            const deviceId = cameraSelect.value;
+            play(deviceId);
+        }
+        
+        // Called when video has loaded and started playing
+        function onVideoPlayed() {
+            updateSVGViewBox();
+            startDecoding();
+        }
+        
+        // Update SVG overlay to match video dimensions
+        function updateSVGViewBox() {
+            if (videoElement.videoWidth && videoElement.videoHeight) {
+                svgOverlay.setAttribute("viewBox", `0 0 ${videoElement.videoWidth} ${videoElement.videoHeight}`);
+            }
+        }
+        
+        // Start barcode detection
+        function startDecoding() {
+            clearInterval(recognitionInterval);
+            recognitionInterval = setInterval(decode, 200); // Check every 200ms
+        }
+        
+        // Detect barcodes in video
+        async function decode() {
+            if (!barcodeDetector || decoding || !isRecognizing) return;
+            
+            try {
+                decoding = true;
+                console.log("Attempting to detect barcode...");
+                
+                // Make sure video is playing and has dimensions
+                if (videoElement.readyState < 2 || !videoElement.videoWidth) {
+                    console.log("Video not ready yet");
+                    decoding = false;
+                    return;
+                }
+                
+                // Log video status for debugging
+                console.log(`Video dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}, readyState: ${videoElement.readyState}`);
+                
+                try {
+                    const barcodes = await barcodeDetector.detect(videoElement);
+                    console.log("Barcode detection result:", barcodes);
+                    
+                    drawOverlay(barcodes);
+                    
+                    if (barcodes.length > 0) {
+                        console.log("Barcode found:", barcodes[0].rawValue);
+                        stopRecognition();
+                        displayResult('Barcode', barcodes[0].rawValue);
+                    }
+                } catch (detectionError) {
+                    console.error("Error in barcode detection:", detectionError);
+                }
+                
+                decoding = false;
+            } catch (error) {
+                decoding = false;
+                console.error('Barcode detection process error:', error);
+            }
+        }
+        
+        // Draw barcode overlay on video
+        function drawOverlay(barcodes) {
+            svgOverlay.innerHTML = "";
+            
+            barcodes.forEach(barcode => {
+                if (!barcode.cornerPoints || barcode.cornerPoints.length !== 4) return;
+                
+                // Create polygon points
+                let pointsData = "";
+                barcode.cornerPoints.forEach(point => {
+                    pointsData += `${point.x},${point.y} `;
+                });
+                
+                // Create polygon element
+                const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                polygon.setAttribute("points", pointsData.trim());
+                polygon.setAttribute("class", "barcode-polygon");
+                
+                // Create text element
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.textContent = barcode.rawValue;
+                text.setAttribute("x", barcode.cornerPoints[0].x);
+                text.setAttribute("y", barcode.cornerPoints[0].y - 10);
+                text.setAttribute("fill", "red");
+                text.setAttribute("font-size", "20");
+                
+                // Add to SVG
+                svgOverlay.appendChild(polygon);
+                svgOverlay.appendChild(text);
+            });
+        }
+        
+        // Start recognition process
+        function startRecognition() {
+            if (isRecognizing) return;
+            
+            console.log("Starting recognition process");
+            isRecognizing = true;
+            home.style.display = "none";
+            scannerContainer.style.display = "block";
+            resultDiv.textContent = "";
+            
+            // Force scanner container to show
+            scannerContainer.style.display = "block";
+            
+            // Show loading indicator
+            loadingDiv.style.display = "block";
+            loadingDiv.textContent = "Starting recognition...";
+            
+            // Initialize barcode detection first if available
+            if ('BarcodeDetector' in window) {
+                console.log("BarcodeDetector is available, initializing camera");
+                
+                try {
+                    // Re-initialize barcode detector to ensure it's fresh
+                    barcodeDetector = new BarcodeDetector({
+                        formats: ['ean_13', 'qr_code']
+                    });
+                    
+                    loadDevicesAndPlay();
+                    statusDiv.textContent = "Started camera. Scanning for barcodes...";
+                } catch (e) {
+                    console.error("Error initializing barcode detector:", e);
+                    statusDiv.textContent = "Error starting barcode scanner: " + e.message;
+                }
+            } else {
+                console.log("BarcodeDetector is not available");
+                statusDiv.textContent = "Barcode detection not available in this browser.";
+            }
+            
+            // Initialize speech recognition after a slight delay
+            setTimeout(() => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition && isRecognizing) {
+                    console.log("Starting speech recognition");
+                    speechRecognition = initSpeechRecognition();
+                    try {
+                        speechRecognition.start();
+                        statusDiv.textContent += " Listening for voice input...";
+                    } catch (e) {
+                        console.error("Error starting speech recognition:", e);
+                    }
+                } else {
+                    console.log("Speech recognition not available or recognition stopped");
+                }
+            }, 500); // Short delay to prevent simultaneous API initialization
+        }
+        
+        // Stop recognition process
+        function stopRecognition() {
+            isRecognizing = false;
+            
+            // Stop barcode detection
+            clearInterval(recognitionInterval);
+            stop();
+            
+            // Stop speech recognition
+            if (speechRecognition) {
+                try {
+                    speechRecognition.stop();
+                } catch (e) {
+                    console.error("Error stopping speech recognition:", e);
+                }
+            }
+            
+            // Show start screen
+            scannerContainer.style.display = "none";
+            home.style.display = "block";
+        }
+        
+        // Clean up resources
+        function stop() {
+            clearInterval(recognitionInterval);
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+        }
+        
+        // Display recognition result
+        function displayResult(type, value) {
+            scannerContainer.style.display = "block";
+            resultDiv.innerHTML = `<h3>${type} Detected:</h3><p>${value}</p>`;
+            statusDiv.textContent = `${type} detected!`;
+            
+            // Make sure result is visible
+            resultDiv.style.display = "block";
+            
+            // Log for debugging
+            console.log(`${type} detected:`, value);
+            
+            // Alert on mobile for confirmation
+            if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                alert(`${type} detected: ${value}`);
+            }
+        }
+    </script>
+</body>
+</html>
