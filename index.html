@@ -136,7 +136,6 @@
     <div class="scanner-container">
         <button id="stopButton">Stop Recognition</button>
         <div class="loading" id="loading"></div>
-        <select id="cameraSelect"></select>
         <div id="videoContainer">
             <video id="video" class="camera" autoplay playsinline></video>
             <svg class="overlay" viewBox="0 0 1280 720"></svg>
@@ -171,7 +170,6 @@
             // Set up event listeners
             startButton.addEventListener('click', startRecognition);
             stopButton.addEventListener('click', stopRecognition);
-            cameraSelect.addEventListener('change', onCameraChanged);
             videoElement.addEventListener('loadeddata', onVideoPlayed);
             
             // Initialize capabilities
@@ -185,6 +183,32 @@
             resultDiv.style.padding = "15px";
             resultDiv.style.margin = "20px 0";
             resultDiv.innerHTML = "<p>Recognition results will appear here.</p>";
+            
+            // Preload success sound
+            preloadSound();
+        }
+        
+        // Preload audio context for iOS
+        function preloadSound() {
+            try {
+                // Create silent audio context to enable audio on iOS
+                document.addEventListener('touchstart', function() {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        const audioCtx = new AudioContext();
+                        // Create and play a silent sound
+                        const oscillator = audioCtx.createOscillator();
+                        const gainNode = audioCtx.createGain();
+                        gainNode.gain.value = 0; // Silent
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioCtx.destination);
+                        oscillator.start();
+                        oscillator.stop(audioCtx.currentTime + 0.001);
+                    }
+                }, {once: true});
+            } catch (e) {
+                console.error("Error preloading sound:", e);
+            }
         }
         
         // Test function to check if barcode detection works
@@ -347,76 +371,144 @@
         
         // Load camera devices and start camera
         function loadDevicesAndPlay() {
-            const constraints = {video: true, audio: false};
-            
-            navigator.mediaDevices.getUserMedia(constraints)
-                .then(stream => {
-                    localStream = stream;
-                    cameraSelect.innerHTML = "";
-                    
-                    navigator.mediaDevices.enumerateDevices()
-                        .then(devices => {
-                            const cameraDevices = [];
-                            let count = 0;
-                            let defaultIndex = 0;
-                            
-                            devices.forEach((device, i) => {
-                                if (device.kind === 'videoinput') {
-                                    cameraDevices.push(device);
-                                    const label = device.label || `Camera ${count++}`;
-                                    cameraSelect.add(new Option(label, device.deviceId));
-                                    
-                                    // Try to select back camera on mobile
-                                    if (label.toLowerCase().includes("back")) {
-                                        defaultIndex = cameraDevices.length - 1;
-                                    }
-                                }
-                            });
-                            
-                            if (cameraDevices.length > 0) {
-                                cameraSelect.selectedIndex = defaultIndex;
-                                play(cameraDevices[defaultIndex].deviceId);
-                            } else {
-                                console.error("No camera detected");
-                                statusDiv.textContent = "No camera detected. Using speech recognition only.";
-                            }
-                        })
-                        .catch(err => {
-                            console.error('Error enumerating devices:', err);
-                            statusDiv.textContent = 'Error accessing camera devices: ' + err.message;
-                        });
-                })
-                .catch(err => {
-                    console.error('Error accessing camera:', err);
-                    statusDiv.textContent = 'Error accessing camera: ' + err.message;
-                    
-                    // Start speech recognition even if camera fails
-                    if (speechRecognition) {
-                        try {
-                            speechRecognition.start();
-                            statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
-                        } catch (e) {
-                            console.error("Error starting speech recognition:", e);
-                        }
-                    }
-                });
-        }
-        
-        // Play video from selected camera
-        function play(deviceId) {
-            stop();
-            const constraints = deviceId ? 
-                { video: { deviceId: deviceId }, audio: false } : 
-                { video: true, audio: false };
+            // Target back camera with flash if available
+            const constraints = {
+                video: {
+                    facingMode: { exact: "environment" }, // Force back camera
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
             
             navigator.mediaDevices.getUserMedia(constraints)
                 .then(stream => {
                     localStream = stream;
                     videoElement.srcObject = stream;
+                    
+                    // Try to enable flash/torch
+                    enableFlash(stream);
                 })
                 .catch(err => {
                     console.error('Error accessing camera:', err);
-                    statusDiv.textContent = 'Error accessing camera: ' + err.message;
+                    // If exact environment constraint fails, try without 'exact'
+                    if (err.name === 'OverconstrainedError') {
+                        const fallbackConstraints = {
+                            video: {
+                                facingMode: "environment", // Try back camera without exact
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 }
+                            },
+                            audio: false
+                        };
+                        
+                        navigator.mediaDevices.getUserMedia(fallbackConstraints)
+                            .then(fallbackStream => {
+                                localStream = fallbackStream;
+                                videoElement.srcObject = fallbackStream;
+                                enableFlash(fallbackStream);
+                            })
+                            .catch(fallbackErr => {
+                                console.error('Fallback camera error:', fallbackErr);
+                                statusDiv.textContent = 'Error accessing camera: ' + fallbackErr.message;
+                                
+                                // Start speech recognition even if camera fails
+                                if (speechRecognition) {
+                                    try {
+                                        speechRecognition.start();
+                                        statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
+                                    } catch (e) {
+                                        console.error("Error starting speech recognition:", e);
+                                    }
+                                }
+                            });
+                    } else {
+                        statusDiv.textContent = 'Error accessing camera: ' + err.message;
+                        
+                        // Start speech recognition even if camera fails
+                        if (speechRecognition) {
+                            try {
+                                speechRecognition.start();
+                                statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
+                            } catch (e) {
+                                console.error("Error starting speech recognition:", e);
+                            }
+                        }
+                    }
+                });
+        }
+        
+        // Enable flash/torch if available
+        function enableFlash(stream) {
+            try {
+                const track = stream.getVideoTracks()[0];
+                
+                // Check if torch is available
+                if (track && track.getCapabilities && track.getCapabilities().torch) {
+                    track.applyConstraints({
+                        advanced: [{ torch: true }]
+                    }).then(() => {
+                        console.log("Torch enabled successfully");
+                    }).catch(err => {
+                        console.error("Error enabling torch:", err);
+                    });
+                } else {
+                    console.log("Torch not available on this device/browser");
+                }
+            } catch (e) {
+                console.error("Error trying to enable flash:", e);
+            }
+        }
+        
+        // Play video from selected camera
+        function play(deviceId) {
+            stop();
+            
+            // Now using the environment facing camera (back camera)
+            const constraints = {
+                video: {
+                    facingMode: { exact: "environment" },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
+            
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    localStream = stream;
+                    videoElement.srcObject = stream;
+                    
+                    // Try to enable flash
+                    enableFlash(stream);
+                })
+                .catch(err => {
+                    console.error('Error accessing camera:', err);
+                    
+                    // If exact environment constraint fails, try without 'exact'
+                    if (err.name === 'OverconstrainedError') {
+                        const fallbackConstraints = {
+                            video: {
+                                facingMode: "environment", // Try without exact
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 }
+                            },
+                            audio: false
+                        };
+                        
+                        navigator.mediaDevices.getUserMedia(fallbackConstraints)
+                            .then(fallbackStream => {
+                                localStream = fallbackStream;
+                                videoElement.srcObject = fallbackStream;
+                                enableFlash(fallbackStream);
+                            })
+                            .catch(fallbackErr => {
+                                console.error('Fallback camera error:', fallbackErr);
+                                statusDiv.textContent = 'Error accessing camera: ' + fallbackErr.message;
+                            });
+                    } else {
+                        statusDiv.textContent = 'Error accessing camera: ' + err.message;
+                    }
                 });
         }
         
@@ -533,7 +625,7 @@
                     const barcodes = await barcodeDetector.detect(videoElement);
                     console.log("Barcode detection result:", barcodes);
                     
-                    //drawOverlay(barcodes);
+                    drawOverlay(barcodes);
                     
                     if (barcodes.length > 0) {
                         console.log("Barcode found:", barcodes[0].rawValue);
@@ -551,45 +643,57 @@
             }
         }
         
-        // Draw barcode overlay on video
+        // Draw barcode overlay on video - no visible rectangle
         function drawOverlay(barcodes) {
+            // Clear any existing overlay
             svgOverlay.innerHTML = "";
             
-            barcodes.forEach(barcode => {
-                if (!barcode.cornerPoints || barcode.cornerPoints.length !== 4) return;
+            // Only use this function to check for barcodes and not to draw anything
+            if (barcodes.length > 0) {
+                // Play success sound when barcode is detected
+                playSuccessBeep();
+            }
+        }
+        
+        // Create and play a success beep
+        function playSuccessBeep() {
+            try {
+                // Create audio context
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                const audioCtx = new AudioContext();
                 
-                // Create polygon points
-                let pointsData = "";
-                barcode.cornerPoints.forEach(point => {
-                    pointsData += `${point.x},${point.y} `;
-                });
+                // Create oscillator for beep
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
                 
-                // Create polygon element
-                const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                polygon.setAttribute("points", pointsData.trim());
-                polygon.setAttribute("class", "barcode-polygon");
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // Higher frequency for distinct beep
                 
-                // Create text element
-                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                text.textContent = barcode.rawValue;
-                text.setAttribute("x", barcode.cornerPoints[0].x);
-                text.setAttribute("y", barcode.cornerPoints[0].y - 10);
-                text.setAttribute("fill", "#00cc00");
-                text.setAttribute("font-size", "20");
-                text.setAttribute("font-weight", "bold");
-                text.setAttribute("stroke", "#ffffff");
-                text.setAttribute("stroke-width", "0.5");
+                // Connect oscillator to gain node and gain node to audio output
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
                 
-                // Add to SVG
-                svgOverlay.appendChild(polygon);
-                svgOverlay.appendChild(text);
+                // Set volume
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); // Lower volume
                 
-                // Make video container flash green to indicate successful scan
-                videoElement.parentElement.classList.add('success-highlight');
+                // Start oscillator and stop after 150ms
+                oscillator.start();
                 setTimeout(() => {
-                    videoElement.parentElement.classList.remove('success-highlight');
-                }, 3000);
-            });
+                    oscillator.stop();
+                }, 150);
+                
+                // Play a second beep after a short delay
+                setTimeout(() => {
+                    const oscillator2 = audioCtx.createOscillator();
+                    oscillator2.type = 'sine';
+                    oscillator2.frequency.setValueAtTime(1600, audioCtx.currentTime); // Higher pitch for second beep
+                    oscillator2.connect(gainNode);
+                    oscillator2.start();
+                    setTimeout(() => oscillator2.stop(), 150);
+                }, 200);
+            } catch (e) {
+                console.error("Error playing success beep:", e);
+            }
         }
         
         // Start recognition process
