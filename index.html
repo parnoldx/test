@@ -50,6 +50,7 @@
             background-color: #f1f1f1;
             border-radius: 5px;
             min-height: 50px;
+            border: 1px solid #ddd;
         }
         .scanner-container {
             width: 100%;
@@ -76,9 +77,9 @@
             pointer-events: none;
         }
         .barcode-polygon {
-            fill: rgba(255, 0, 0, 0.2);
-            stroke: red;
-            stroke-width: 2;
+            fill: rgba(0, 255, 0, 0.2);
+            stroke: #00cc00;
+            stroke-width: 3;
         }
         .loading {
             margin: 10px 0;
@@ -98,6 +99,16 @@
             0% { opacity: 0.5; }
             50% { opacity: 1; }
             100% { opacity: 0.5; }
+        }
+        
+        /* Success animation for barcode detection */
+        @keyframes success-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(0, 204, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0); }
+        }
+        .success-highlight {
+            animation: success-pulse 1s 3;
         }
     </style>
 </head>
@@ -157,18 +168,6 @@
             // Initialize result div
             resultDiv.style.display = "block";
             resultDiv.innerHTML = "<p>Recognition results will appear here.</p>";
-            
-            // Add debug button for mobile testing
-            const debugBtn = document.createElement('button');
-            debugBtn.textContent = "Test Barcode Detection";
-            debugBtn.style.backgroundColor = "#ff9800";
-            debugBtn.style.color = "white";
-            debugBtn.style.padding = "10px";
-            debugBtn.style.border = "none";
-            debugBtn.style.borderRadius = "5px";
-            debugBtn.style.margin = "10px";
-            debugBtn.onclick = testBarcodeDetection;
-            document.body.appendChild(debugBtn);
         }
         
         // Test function to check if barcode detection works
@@ -414,6 +413,10 @@
         function onVideoPlayed() {
             updateSVGViewBox();
             startDecoding();
+            
+            // Add a message to indicate camera is active
+            statusDiv.textContent = "Camera active - scanning for barcodes...";
+            console.log("Video has loaded, starting barcode scanning");
         }
         
         // Update SVG overlay to match video dimensions
@@ -426,7 +429,69 @@
         // Start barcode detection
         function startDecoding() {
             clearInterval(recognitionInterval);
-            recognitionInterval = setInterval(decode, 200); // Check every 200ms
+            
+            // Implement a more reliable scanning system with averaging
+            let consecutiveResults = []; // To store recent scan results
+            const requiredConsistentScans = 3; // Number of consistent scans required
+            
+            recognitionInterval = setInterval(async () => {
+                if (!barcodeDetector || !isRecognizing) return;
+                
+                try {
+                    if (decoding) return;
+                    decoding = true;
+                    
+                    // Make sure video is ready
+                    if (videoElement.readyState < 2) {
+                        decoding = false;
+                        return;
+                    }
+                    
+                    const barcodes = await barcodeDetector.detect(videoElement);
+                    
+                    if (barcodes.length > 0) {
+                        // Found a barcode
+                        const currentValue = barcodes[0].rawValue;
+                        
+                        // Add to recent results
+                        consecutiveResults.push(currentValue);
+                        
+                        // Only keep the most recent scans
+                        if (consecutiveResults.length > requiredConsistentScans) {
+                            consecutiveResults.shift();
+                        }
+                        
+                        // Draw the overlay for user feedback
+                        drawOverlay(barcodes);
+                        
+                        // Check if we have enough consistent results
+                        if (consecutiveResults.length >= requiredConsistentScans) {
+                            // Check if all recent results are the same
+                            const allMatch = consecutiveResults.every(
+                                value => value === consecutiveResults[0]
+                            );
+                            
+                            if (allMatch) {
+                                console.log(`Confirmed barcode after ${requiredConsistentScans} consistent scans:`, currentValue);
+                                displayResult('Barcode', currentValue);
+                            }
+                        }
+                    } else {
+                        // Clear the overlay when no barcode detected
+                        svgOverlay.innerHTML = "";
+                        
+                        // Reset consecutive results if nothing detected
+                        if (consecutiveResults.length > 0) {
+                            consecutiveResults = [];
+                        }
+                    }
+                    
+                    decoding = false;
+                } catch (error) {
+                    decoding = false;
+                    console.error('Error in barcode detection:', error);
+                }
+            }, 200); // Check frequently for best responsiveness
         }
         
         // Detect barcodes in video
@@ -590,20 +655,30 @@
         
         // Display recognition result
         function displayResult(type, value) {
-            scannerContainer.style.display = "block";
+            // Stop the recognition
+            isRecognizing = false;
+            clearInterval(recognitionInterval);
+            stop();
+            
+            if (speechRecognition) {
+                try {
+                    speechRecognition.stop();
+                } catch (e) {
+                    console.error("Error stopping speech recognition:", e);
+                }
+            }
+            
+            // Return to home screen
+            scannerContainer.style.display = "none";
+            home.style.display = "block";
+            
+            // Display the result
+            resultDiv.style.display = "block";
             resultDiv.innerHTML = `<h3>${type} Detected:</h3><p>${value}</p>`;
             statusDiv.textContent = `${type} detected!`;
             
-            // Make sure result is visible
-            resultDiv.style.display = "block";
-            
             // Log for debugging
             console.log(`${type} detected:`, value);
-            
-            // Alert on mobile for confirmation
-            if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                alert(`${type} detected: ${value}`);
-            }
         }
     </script>
 </body>
