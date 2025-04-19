@@ -138,7 +138,6 @@
         <div class="loading" id="loading"></div>
         <div id="videoContainer">
             <video id="video" class="camera" autoplay playsinline></video>
-            <svg class="overlay" viewBox="0 0 1280 720"></svg>
         </div>
     </div>
 
@@ -153,7 +152,6 @@
         const scannerContainer = document.querySelector('.scanner-container');
         const home = document.querySelector('.home');
         const cameraSelect = document.getElementById('cameraSelect');
-        const svgOverlay = document.querySelector('svg');
         
         // Global variables
         let localStream;
@@ -520,7 +518,6 @@
         
         // Called when video has loaded and started playing
         function onVideoPlayed() {
-            updateSVGViewBox();
             startDecoding();
             
             // Add a message to indicate camera is active
@@ -528,13 +525,7 @@
             console.log("Video has loaded, starting barcode scanning");
         }
         
-        // Update SVG overlay to match video dimensions
-        function updateSVGViewBox() {
-            if (videoElement.videoWidth && videoElement.videoHeight) {
-                svgOverlay.setAttribute("viewBox", `0 0 ${videoElement.videoWidth} ${videoElement.videoHeight}`);
-            }
-        }
-        
+       
         // Start barcode detection
         function startDecoding() {
             clearInterval(recognitionInterval);
@@ -582,13 +573,11 @@
                             
                             if (allMatch) {
                                 console.log(`Confirmed barcode after ${requiredConsistentScans} consistent scans:`, currentValue);
+								playSuccessBeep();
                                 displayResult('Barcode', currentValue);
                             }
                         }
-                    } else {
-                        // Clear the overlay when no barcode detected
-                        svgOverlay.innerHTML = "";
-                        
+                    } else {                        
                         // Reset consecutive results if nothing detected
                         if (consecutiveResults.length > 0) {
                             consecutiveResults = [];
@@ -624,11 +613,10 @@
                 try {
                     const barcodes = await barcodeDetector.detect(videoElement);
                     console.log("Barcode detection result:", barcodes);
-                    
-                    drawOverlay(barcodes);
-                    
+                                        
                     if (barcodes.length > 0) {
                         console.log("Barcode found:", barcodes[0].rawValue);
+						playSuccessBeep();
                         stopRecognition();
                         displayResult('Barcode', barcodes[0].rawValue);
                     }
@@ -642,19 +630,7 @@
                 console.error('Barcode detection process error:', error);
             }
         }
-        
-        // Draw barcode overlay on video - no visible rectangle
-        function drawOverlay(barcodes) {
-            // Clear any existing overlay
-            svgOverlay.innerHTML = "";
-            
-            // Only use this function to check for barcodes and not to draw anything
-            if (barcodes.length > 0) {
-                // Play success sound when barcode is detected
-                playSuccessBeep();
-            }
-        }
-        
+
         // Create and play a success beep
         function playSuccessBeep() {
             try {
