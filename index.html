@@ -138,6 +138,7 @@
         <div class="loading" id="loading"></div>
         <div id="videoContainer">
             <video id="video" class="camera" autoplay playsinline></video>
+            <svg class="overlay" viewBox="0 0 1280 720"></svg>
         </div>
     </div>
 
@@ -152,6 +153,7 @@
         const scannerContainer = document.querySelector('.scanner-container');
         const home = document.querySelector('.home');
         const cameraSelect = document.getElementById('cameraSelect');
+        const svgOverlay = document.querySelector('svg');
         
         // Global variables
         let localStream;
@@ -206,42 +208,6 @@
                 }, {once: true});
             } catch (e) {
                 console.error("Error preloading sound:", e);
-            }
-        }
-        
-        // Test function to check if barcode detection works
-        async function testBarcodeDetection() {
-            statusDiv.textContent = "Testing barcode detection capability...";
-            
-            try {
-                if (!('BarcodeDetector' in window)) {
-                    alert("BarcodeDetector API is not available in this browser");
-                    return;
-                }
-                
-                const formats = await BarcodeDetector.getSupportedFormats();
-                alert("Supported barcode formats: " + formats.join(", "));
-                
-                // Create a test QR code
-                const canvas = document.createElement('canvas');
-                canvas.width = 200;
-                canvas.height = 200;
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = "white";
-                ctx.fillRect(0, 0, 200, 200);
-                ctx.fillStyle = "black";
-                ctx.fillRect(50, 50, 100, 100);
-                
-                // Try to detect (will fail, but tests if API is working)
-                const detector = new BarcodeDetector();
-                try {
-                    const result = await detector.detect(canvas);
-                    alert("Detection test completed. Results: " + JSON.stringify(result));
-                } catch (e) {
-                    alert("Detection test error: " + e.message);
-                }
-            } catch (e) {
-                alert("Barcode test error: " + e.message);
             }
         }
         
@@ -518,6 +484,7 @@
         
         // Called when video has loaded and started playing
         function onVideoPlayed() {
+            updateSVGViewBox();
             startDecoding();
             
             // Add a message to indicate camera is active
@@ -525,7 +492,13 @@
             console.log("Video has loaded, starting barcode scanning");
         }
         
-       
+        // Update SVG overlay to match video dimensions
+        function updateSVGViewBox() {
+            if (videoElement.videoWidth && videoElement.videoHeight) {
+                svgOverlay.setAttribute("viewBox", `0 0 ${videoElement.videoWidth} ${videoElement.videoHeight}`);
+            }
+        }
+        
         // Start barcode detection
         function startDecoding() {
             clearInterval(recognitionInterval);
@@ -577,7 +550,10 @@
                                 displayResult('Barcode', currentValue);
                             }
                         }
-                    } else {                        
+                    } else {
+                        // Clear the overlay when no barcode detected
+                        svgOverlay.innerHTML = "";
+                        
                         // Reset consecutive results if nothing detected
                         if (consecutiveResults.length > 0) {
                             consecutiveResults = [];
@@ -613,7 +589,9 @@
                 try {
                     const barcodes = await barcodeDetector.detect(videoElement);
                     console.log("Barcode detection result:", barcodes);
-                                        
+                    
+                    drawOverlay(barcodes);
+                    
                     if (barcodes.length > 0) {
                         console.log("Barcode found:", barcodes[0].rawValue);
 						playSuccessBeep();
@@ -630,7 +608,13 @@
                 console.error('Barcode detection process error:', error);
             }
         }
-
+        
+        // Draw barcode overlay on video - no visible rectangle
+        function drawOverlay(barcodes) {
+            // Clear any existing overlay
+            svgOverlay.innerHTML = "";
+        }
+        
         // Create and play a success beep
         function playSuccessBeep() {
             try {
