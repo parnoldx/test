@@ -51,6 +51,16 @@
             border-radius: 5px;
             min-height: 50px;
             border: 1px solid #ddd;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        #result h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        #result p {
+            color: #333;
+            font-size: 18px;
+            word-break: break-word;
         }
         .scanner-container {
             width: 100%;
@@ -118,6 +128,9 @@
         <p>Press the button below to start scanning barcodes and listening for voice input.</p>
         <button id="startButton">Start Recognition</button>
         <div id="status">Checking capabilities...</div>
+        
+        <!-- Make sure result is always visible on home screen -->
+        <div id="result"></div>
     </div>
     
     <div class="scanner-container">
@@ -128,7 +141,6 @@
             <video id="video" class="camera" autoplay playsinline></video>
             <svg class="overlay" viewBox="0 0 1280 720"></svg>
         </div>
-        <div id="result"></div>
     </div>
 
     <script>
@@ -165,8 +177,13 @@
             // Initialize capabilities
             checkCapabilities();
             
-            // Initialize result div
+            // Initialize result div with clear styling to make it visible
             resultDiv.style.display = "block";
+            resultDiv.style.backgroundColor = "#f1f1f1";
+            resultDiv.style.border = "1px solid #ddd";
+            resultDiv.style.borderRadius = "5px";
+            resultDiv.style.padding = "15px";
+            resultDiv.style.margin = "20px 0";
             resultDiv.innerHTML = "<p>Recognition results will appear here.</p>";
         }
         
@@ -516,7 +533,7 @@
                     const barcodes = await barcodeDetector.detect(videoElement);
                     console.log("Barcode detection result:", barcodes);
                     
-                    drawOverlay(barcodes);
+                    //drawOverlay(barcodes);
                     
                     if (barcodes.length > 0) {
                         console.log("Barcode found:", barcodes[0].rawValue);
@@ -557,12 +574,21 @@
                 text.textContent = barcode.rawValue;
                 text.setAttribute("x", barcode.cornerPoints[0].x);
                 text.setAttribute("y", barcode.cornerPoints[0].y - 10);
-                text.setAttribute("fill", "red");
+                text.setAttribute("fill", "#00cc00");
                 text.setAttribute("font-size", "20");
+                text.setAttribute("font-weight", "bold");
+                text.setAttribute("stroke", "#ffffff");
+                text.setAttribute("stroke-width", "0.5");
                 
                 // Add to SVG
                 svgOverlay.appendChild(polygon);
                 svgOverlay.appendChild(text);
+                
+                // Make video container flash green to indicate successful scan
+                videoElement.parentElement.classList.add('success-highlight');
+                setTimeout(() => {
+                    videoElement.parentElement.classList.remove('success-highlight');
+                }, 3000);
             });
         }
         
@@ -674,8 +700,13 @@
             
             // Display the result
             resultDiv.style.display = "block";
-            resultDiv.innerHTML = `<h3>${type} Detected:</h3><p>${value}</p>`;
-            statusDiv.textContent = `${type} detected!`;
+            resultDiv.innerHTML = `<h3>${type} Detected:</h3><p style="font-size: 18px; font-weight: bold;">${value}</p>`;
+            
+            // Scroll to make result visible
+            resultDiv.scrollIntoView({ behavior: 'smooth' });
+            
+            // Update status
+            statusDiv.textContent = `${type} detected successfully!`;
             
             // Log for debugging
             console.log(`${type} detected:`, value);
