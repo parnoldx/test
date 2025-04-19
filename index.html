@@ -26,7 +26,7 @@
             cursor: pointer;
             border-radius: 5px;
         }
-        #stopButton {
+        #stopButton, #toggleCameraButton {
             background-color: #f44336;
             border: none;
             color: white;
@@ -35,9 +35,12 @@
             text-decoration: none;
             display: inline-block;
             font-size: 16px;
-            margin: 20px 0;
+            margin: 20px 5px;
             cursor: pointer;
             border-radius: 5px;
+        }
+        #toggleCameraButton {
+            background-color: #2196F3;
         }
         #status {
             margin: 10px 0;
@@ -71,6 +74,9 @@
         }
         .home {
             display: block;
+        }
+        #videoContainer {
+            display: none;
         }
         #video {
             width: 100%;
@@ -120,6 +126,67 @@
         .success-highlight {
             animation: success-pulse 1s 3;
         }
+        
+        /* Recognition icon styles */
+        .recognition-icon-container {
+            margin: 30px auto;
+            width: 120px;
+            height: 120px;
+            position: relative;
+        }
+        .recognition-icon {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #f1f1f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .recognition-icon::before {
+            content: "";
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            border: 5px solid #4CAF50;
+            border-top-color: transparent;
+            animation: spin 1.5s linear infinite;
+        }
+        .recognition-icon::after {
+            content: "🔍";
+            font-size: 30px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Voice icon animation */
+        .voice-animation {
+            display: inline-block;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .voice-bar {
+            display: inline-block;
+            width: 5px;
+            height: 20px;
+            margin: 0 2px;
+            background-color: #4CAF50;
+            border-radius: 2px;
+            animation: voice-wave 1.2s infinite ease-in-out;
+        }
+        .voice-bar:nth-child(2) { animation-delay: 0.1s; }
+        .voice-bar:nth-child(3) { animation-delay: 0.2s; }
+        .voice-bar:nth-child(4) { animation-delay: 0.3s; }
+        .voice-bar:nth-child(5) { animation-delay: 0.4s; }
+        @keyframes voice-wave {
+            0%, 100% { height: 20px; }
+            50% { height: 40px; }
+        }
     </style>
 </head>
 <body>
@@ -134,8 +201,25 @@
     </div>
     
     <div class="scanner-container">
-        <button id="stopButton">Stop Recognition</button>
+        <div class="buttons-container">
+            <button id="stopButton">Stop Recognition</button>
+            <button id="toggleCameraButton">Show Camera</button>
+        </div>
         <div class="loading" id="loading"></div>
+        
+        <!-- Recognition icon container -->
+        <div class="recognition-icon-container">
+            <div class="recognition-icon"></div>
+            <!-- Voice animation -->
+            <div class="voice-animation">
+                <div class="voice-bar"></div>
+                <div class="voice-bar"></div>
+                <div class="voice-bar"></div>
+                <div class="voice-bar"></div>
+                <div class="voice-bar"></div>
+            </div>
+        </div>
+        
         <div id="videoContainer">
             <video id="video" class="camera" autoplay playsinline></video>
             <svg class="overlay" viewBox="0 0 1280 720"></svg>
@@ -146,13 +230,14 @@
         // DOM Elements
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
+        const toggleCameraButton = document.getElementById('toggleCameraButton');
         const statusDiv = document.getElementById('status');
         const resultDiv = document.getElementById('result');
         const videoElement = document.getElementById('video');
         const loadingDiv = document.getElementById('loading');
         const scannerContainer = document.querySelector('.scanner-container');
+        const videoContainer = document.getElementById('videoContainer');
         const home = document.querySelector('.home');
-        const cameraSelect = document.getElementById('cameraSelect');
         const svgOverlay = document.querySelector('svg');
         
         // Global variables
@@ -162,6 +247,7 @@
         let isRecognizing = false;
         let speechRecognition;
         let decoding = false;
+        let cameraVisible = false;
         
         // Initialize on load
         window.addEventListener('load', initApp);
@@ -170,6 +256,7 @@
             // Set up event listeners
             startButton.addEventListener('click', startRecognition);
             stopButton.addEventListener('click', stopRecognition);
+            toggleCameraButton.addEventListener('click', toggleCamera);
             videoElement.addEventListener('loadeddata', onVideoPlayed);
             
             // Initialize capabilities
@@ -186,6 +273,19 @@
             
             // Preload success sound
             preloadSound();
+        }
+        
+        // Toggle camera visibility
+        function toggleCamera() {
+            cameraVisible = !cameraVisible;
+            
+            if (cameraVisible) {
+                videoContainer.style.display = "block";
+                toggleCameraButton.textContent = "Hide Camera";
+            } else {
+                videoContainer.style.display = "none";
+                toggleCameraButton.textContent = "Show Camera";
+            }
         }
         
         // Preload audio context for iOS
@@ -476,12 +576,6 @@
                 });
         }
         
-        // Handle camera selection change
-        function onCameraChanged() {
-            const deviceId = cameraSelect.value;
-            play(deviceId);
-        }
-        
         // Called when video has loaded and started playing
         function onVideoPlayed() {
             updateSVGViewBox();
@@ -546,7 +640,7 @@
                             
                             if (allMatch) {
                                 console.log(`Confirmed barcode after ${requiredConsistentScans} consistent scans:`, currentValue);
-								playSuccessBeep();
+                                playSuccessBeep();
                                 displayResult('Barcode', currentValue);
                             }
                         }
@@ -594,7 +688,7 @@
                     
                     if (barcodes.length > 0) {
                         console.log("Barcode found:", barcodes[0].rawValue);
-						playSuccessBeep();
+                        playSuccessBeep();
                         stopRecognition();
                         displayResult('Barcode', barcodes[0].rawValue);
                     }
@@ -665,6 +759,11 @@
             home.style.display = "none";
             scannerContainer.style.display = "block";
             resultDiv.textContent = "";
+            
+            // Hide camera view by default
+            videoContainer.style.display = "none";
+            cameraVisible = false;
+            toggleCameraButton.textContent = "Show Camera";
             
             // Force scanner container to show
             scannerContainer.style.display = "block";
