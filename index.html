@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-    <title>Barcode and Speech Recognition</title>
+    <title>Barcode and Voice Recognition</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,35 +12,21 @@
             padding: 20px;
             text-align: center;
         }
-        #startButton {
-            background-color: #4CAF50;
+        button {
             border: none;
             color: white;
             padding: 15px 32px;
             text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 20px 0;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        #stopButton, #toggleCameraButton {
-            background-color: #f44336;
-            border: none;
-            color: white;
-            padding: 15px 32px;
-            text-align: center;
-            text-decoration: none;
             display: inline-block;
             font-size: 16px;
             margin: 20px 5px;
             cursor: pointer;
             border-radius: 5px;
         }
-        #toggleCameraButton {
-            background-color: #2196F3;
-        }
+        #startButton { background-color: #4CAF50; }
+        #stopButton { background-color: #f44336; }
+        #toggleCameraButton { background-color: #2196F3; }
+        
         #status {
             margin: 10px 0;
             font-weight: bold;
@@ -56,15 +41,6 @@
             border: 1px solid #ddd;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        #result h3 {
-            color: #2c3e50;
-            margin-top: 0;
-        }
-        #result p {
-            color: #333;
-            font-size: 18px;
-            word-break: break-word;
-        }
         .scanner-container {
             width: 100%;
             max-width: 640px;
@@ -72,59 +48,13 @@
             position: relative;
             display: none;
         }
-        .home {
-            display: block;
-        }
-        #videoContainer {
-            display: none;
-        }
+        .home { display: block; }
+        #videoContainer { display: none; }
         #video {
             width: 100%;
             height: auto;
             border: 2px solid #ddd;
             border-radius: 5px;
-        }
-        .overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-        .barcode-polygon {
-            fill: rgba(0, 255, 0, 0.2);
-            stroke: #00cc00;
-            stroke-width: 3;
-        }
-        .loading {
-            margin: 10px 0;
-        }
-        .loading::after {
-            content: "⏳";
-            animation: pulse 1.5s infinite;
-            font-size: 24px;
-        }
-        select {
-            padding: 8px;
-            margin: 10px 0;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-        }
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { opacity: 0.5; }
-        }
-        
-        /* Success animation for barcode detection */
-        @keyframes success-pulse {
-            0% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0.7); }
-            70% { box-shadow: 0 0 0 15px rgba(0, 204, 0, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0); }
-        }
-        .success-highlight {
-            animation: success-pulse 1s 3;
         }
         
         /* Recognition icon styles */
@@ -194,10 +124,8 @@
         <h1>Barcode and Voice Recognition</h1>
         <p>Press the button below to start scanning barcodes and listening for voice input.</p>
         <button id="startButton">Start Recognition</button>
-        <div id="status">Checking capabilities...</div>
-        
-        <!-- Make sure result is always visible on home screen -->
-        <div id="result"></div>
+        <div id="status">Ready</div>
+        <div id="result">Recognition results will appear here.</div>
     </div>
     
     <div class="scanner-container">
@@ -205,12 +133,9 @@
             <button id="stopButton">Stop Recognition</button>
             <button id="toggleCameraButton">Show Camera</button>
         </div>
-        <div class="loading" id="loading"></div>
         
-        <!-- Recognition icon container -->
         <div class="recognition-icon-container">
             <div class="recognition-icon"></div>
-            <!-- Voice animation -->
             <div class="voice-animation">
                 <div class="voice-bar"></div>
                 <div class="voice-bar"></div>
@@ -221,8 +146,7 @@
         </div>
         
         <div id="videoContainer">
-            <video id="video" class="camera" autoplay playsinline></video>
-            <svg class="overlay" viewBox="0 0 1280 720"></svg>
+            <video id="video" autoplay playsinline></video>
         </div>
     </div>
 
@@ -234,11 +158,9 @@
         const statusDiv = document.getElementById('status');
         const resultDiv = document.getElementById('result');
         const videoElement = document.getElementById('video');
-        const loadingDiv = document.getElementById('loading');
         const scannerContainer = document.querySelector('.scanner-container');
         const videoContainer = document.getElementById('videoContainer');
         const home = document.querySelector('.home');
-        const svgOverlay = document.querySelector('svg');
         
         // Global variables
         let localStream;
@@ -246,149 +168,70 @@
         let recognitionInterval;
         let isRecognizing = false;
         let speechRecognition;
-        let decoding = false;
         let cameraVisible = false;
         
-        // Initialize on load
-        window.addEventListener('load', initApp);
+        // Device detection
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         
-        function initApp() {
-            // Set up event listeners
+        // Initialize on load
+        window.addEventListener('load', () => {
             startButton.addEventListener('click', startRecognition);
             stopButton.addEventListener('click', stopRecognition);
             toggleCameraButton.addEventListener('click', toggleCamera);
-            videoElement.addEventListener('loadeddata', onVideoPlayed);
+            videoElement.addEventListener('loadeddata', startDecoding);
             
-            // Initialize capabilities
-            checkCapabilities();
+            // Pre-initialize the barcode detector if available (for Android)
+            if ('BarcodeDetector' in window && !isIOS) {
+                try {
+                    barcodeDetector = new BarcodeDetector({
+                        formats: ['ean_13', 'qr_code']
+                    });
+                } catch (e) {
+                    console.log("Specific formats not supported, using default detector");
+                    barcodeDetector = new BarcodeDetector();
+                }
+            }
             
-            // Initialize result div with clear styling to make it visible
-            resultDiv.style.display = "block";
-            resultDiv.style.backgroundColor = "#f1f1f1";
-            resultDiv.style.border = "1px solid #ddd";
-            resultDiv.style.borderRadius = "5px";
-            resultDiv.style.padding = "15px";
-            resultDiv.style.margin = "20px 0";
-            resultDiv.innerHTML = "<p>Recognition results will appear here.</p>";
-            
-            // Preload success sound
-            preloadSound();
+            // Create a silent audio context for iOS
+            document.addEventListener('touchstart', () => {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    const audioCtx = new AudioContext();
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    gainNode.gain.value = 0;
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.001);
+                }
+            }, {once: true});
+        });
+        
+        // Function to handle barcode data from iOS
+        function onscan(bardata) {
+            displayResult('Barcode', bardata);
+        }
+        
+        // Function to start the iOS native scanner
+        function startIOSNativeScanner() {
+            statusDiv.textContent = "Starting iOS native scanner...";
+            // Use a unique callback name (can be any string, but should be specific to your app)
+            const callbackField = "barcode_result";
+            window.location = "readbarcode://" + callbackField;
         }
         
         // Toggle camera visibility
         function toggleCamera() {
+            if (isIOS) {
+                // For iOS, we'll trigger the native scanner instead of toggling visibility
+                startIOSNativeScanner();
+                return;
+            }
+            
             cameraVisible = !cameraVisible;
-            
-            if (cameraVisible) {
-                videoContainer.style.display = "block";
-                toggleCameraButton.textContent = "Hide Camera";
-            } else {
-                videoContainer.style.display = "none";
-                toggleCameraButton.textContent = "Show Camera";
-            }
-        }
-        
-        // Preload audio context for iOS
-        function preloadSound() {
-            try {
-                // Create silent audio context to enable audio on iOS
-                document.addEventListener('touchstart', function() {
-                    const AudioContext = window.AudioContext || window.webkitAudioContext;
-                    if (AudioContext) {
-                        const audioCtx = new AudioContext();
-                        // Create and play a silent sound
-                        const oscillator = audioCtx.createOscillator();
-                        const gainNode = audioCtx.createGain();
-                        gainNode.gain.value = 0; // Silent
-                        oscillator.connect(gainNode);
-                        gainNode.connect(audioCtx.destination);
-                        oscillator.start();
-                        oscillator.stop(audioCtx.currentTime + 0.001);
-                    }
-                }, {once: true});
-            } catch (e) {
-                console.error("Error preloading sound:", e);
-            }
-        }
-        
-        async function checkCapabilities() {
-            statusDiv.textContent = "Checking capabilities...";
-            
-            // Check speech recognition
-            const speechSupported = checkSpeechRecognitionSupport();
-            
-            // Check barcode detection with fallback options
-            let barcodeSupported = false;
-            try {
-                if ('BarcodeDetector' in window) {
-                    try {
-                        // Some browsers have BarcodeDetector but getSupportedFormats throws an error
-                        const formats = await BarcodeDetector.getSupportedFormats();
-                        barcodeSupported = formats.length > 0;
-                        console.log("Supported barcode formats:", formats);
-                    } catch (e) {
-                        console.log("getSupportedFormats failed, trying to create detector anyway");
-                        // Try creating a detector anyway, some implementations don't support getSupportedFormats
-                        const testDetector = new BarcodeDetector();
-                        barcodeSupported = true;
-                    }
-                    
-                    if (barcodeSupported) {
-                        // Create with specific formats if possible
-                        try {
-                            barcodeDetector = new BarcodeDetector({
-                                formats: ['ean_13', 'qr_code']
-                            });
-                        } catch (e) {
-                            // Fall back to default constructor if format specification fails
-                            console.log("Format specification failed, using default detector");
-                            barcodeDetector = new BarcodeDetector();
-                        }
-                        console.log("BarcodeDetector initialized");
-                    }
-                }
-                
-                // Use a simple fallback approach for browsers without native support
-                if (!barcodeSupported) {
-                    console.log("Native BarcodeDetector not supported");
-                    // Create a very simple mock implementation that does nothing
-                    // This allows code to run without errors, but barcode detection won't work
-                    window.BarcodeDetector = class {
-                        async detect() {
-                            console.log("Mock BarcodeDetector called");
-                            return [];
-                        }
-                    };
-                    barcodeDetector = new BarcodeDetector();
-                    // Let user know
-                    alert("Barcode detection is not supported by your browser. Only voice recognition will be available.");
-                }
-            } catch (error) {
-                console.error("Error checking barcode capabilities:", error);
-            }
-            
-            // Update UI based on capabilities
-            if (!barcodeSupported && !speechSupported) {
-                statusDiv.textContent = "Neither barcode detection nor speech recognition is supported in your browser.";
-                startButton.disabled = true;
-                startButton.style.backgroundColor = '#cccccc';
-            } else if (!barcodeSupported) {
-                statusDiv.textContent = "Barcode detection not supported. Only speech recognition will be used.";
-            } else if (!speechSupported) {
-                statusDiv.textContent = "Speech recognition not supported. Only barcode detection will be used.";
-            } else {
-                statusDiv.textContent = "Ready! Both barcode detection and speech recognition are available.";
-            }
-        }
-        
-        // Check Speech Recognition support
-        function checkSpeechRecognitionSupport() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
-                console.log('Speech Recognition is not supported by this browser.');
-                return false;
-            }
-            return true;
+            videoContainer.style.display = cameraVisible ? "block" : "none";
+            toggleCameraButton.textContent = cameraVisible ? "Hide Camera" : "Show Camera";
         }
         
         // Initialize speech recognition
@@ -404,131 +247,32 @@
             
             recognition.onresult = (event) => {
                 const speechResult = event.results[0][0].transcript;
-                console.log("Speech recognition result:", speechResult);
                 displayResult('Voice Input', speechResult);
-                // Continue scanning a bit longer in case user wants to try barcode too
-                setTimeout(() => {
-                    if (isRecognizing) {
-                        stopRecognition();
-                    }
-                }, 3000);
             };
             
             recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
-                statusDiv.textContent = 'Speech recognition error: ' + event.error;
             };
             
             recognition.onend = () => {
-                // Only restart if we're still in recognition mode
                 if (isRecognizing) {
                     try {
                         recognition.start();
-                    } catch (e) {
-                        console.error("Error restarting speech recognition:", e);
-                    }
+                    } catch (e) {}
                 }
             };
             
             return recognition;
         }
         
-        // Load camera devices and start camera
-        function loadDevicesAndPlay() {
-            // Target back camera with flash if available
-            const constraints = {
-                video: {
-                    facingMode: { exact: "environment" }, // Force back camera
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: false
-            };
-            
-            navigator.mediaDevices.getUserMedia(constraints)
-                .then(stream => {
-                    localStream = stream;
-                    videoElement.srcObject = stream;
-                    
-                    // Try to enable flash/torch
-                    enableFlash(stream);
-                })
-                .catch(err => {
-                    console.error('Error accessing camera:', err);
-                    // If exact environment constraint fails, try without 'exact'
-                    if (err.name === 'OverconstrainedError') {
-                        const fallbackConstraints = {
-                            video: {
-                                facingMode: "environment", // Try back camera without exact
-                                width: { ideal: 1280 },
-                                height: { ideal: 720 }
-                            },
-                            audio: false
-                        };
-                        
-                        navigator.mediaDevices.getUserMedia(fallbackConstraints)
-                            .then(fallbackStream => {
-                                localStream = fallbackStream;
-                                videoElement.srcObject = fallbackStream;
-                                enableFlash(fallbackStream);
-                            })
-                            .catch(fallbackErr => {
-                                console.error('Fallback camera error:', fallbackErr);
-                                statusDiv.textContent = 'Error accessing camera: ' + fallbackErr.message;
-                                
-                                // Start speech recognition even if camera fails
-                                if (speechRecognition) {
-                                    try {
-                                        speechRecognition.start();
-                                        statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
-                                    } catch (e) {
-                                        console.error("Error starting speech recognition:", e);
-                                    }
-                                }
-                            });
-                    } else {
-                        statusDiv.textContent = 'Error accessing camera: ' + err.message;
-                        
-                        // Start speech recognition even if camera fails
-                        if (speechRecognition) {
-                            try {
-                                speechRecognition.start();
-                                statusDiv.textContent = 'Camera unavailable. Listening for voice input...';
-                            } catch (e) {
-                                console.error("Error starting speech recognition:", e);
-                            }
-                        }
-                    }
-                });
-        }
-        
-        // Enable flash/torch if available
-        function enableFlash(stream) {
-            try {
-                const track = stream.getVideoTracks()[0];
-                
-                // Check if torch is available
-                if (track && track.getCapabilities && track.getCapabilities().torch) {
-                    track.applyConstraints({
-                        advanced: [{ torch: true }]
-                    }).then(() => {
-                        console.log("Torch enabled successfully");
-                    }).catch(err => {
-                        console.error("Error enabling torch:", err);
-                    });
-                } else {
-                    console.log("Torch not available on this device/browser");
-                }
-            } catch (e) {
-                console.error("Error trying to enable flash:", e);
+        // Start camera with flash if available (for Android)
+        function startCamera() {
+            // Skip camera initialization for iOS - we'll use the native scanner
+            if (isIOS) {
+                startIOSNativeScanner();
+                return;
             }
-        }
-        
-        // Play video from selected camera
-        function play(deviceId) {
-            stop();
             
-            // Now using the environment facing camera (back camera)
             const constraints = {
                 video: {
                     facingMode: { exact: "environment" },
@@ -538,215 +282,122 @@
                 audio: false
             };
             
+            function handleSuccess(stream) {
+                localStream = stream;
+                videoElement.srcObject = stream;
+                
+                // Try to enable flash/torch immediately
+                const track = stream.getVideoTracks()[0];
+                if (track?.getCapabilities?.()?.torch) {
+                    track.applyConstraints({
+                        advanced: [{ torch: true }]
+                    }).catch(e => console.log("Flash not available:", e));
+                }
+            }
+            
             navigator.mediaDevices.getUserMedia(constraints)
-                .then(stream => {
-                    localStream = stream;
-                    videoElement.srcObject = stream;
-                    
-                    // Try to enable flash
-                    enableFlash(stream);
-                })
-                .catch(err => {
-                    console.error('Error accessing camera:', err);
-                    
-                    // If exact environment constraint fails, try without 'exact'
-                    if (err.name === 'OverconstrainedError') {
-                        const fallbackConstraints = {
-                            video: {
-                                facingMode: "environment", // Try without exact
-                                width: { ideal: 1280 },
-                                height: { ideal: 720 }
-                            },
-                            audio: false
-                        };
+                .then(handleSuccess)
+                .catch(() => {
+                    // Fallback to regular environment camera without 'exact'
+                    navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: "environment",
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
+                    })
+                    .then(handleSuccess)
+                    .catch(err => {
+                        console.error('Camera access error:', err);
+                        statusDiv.textContent = 'Camera unavailable. Using voice only.';
                         
-                        navigator.mediaDevices.getUserMedia(fallbackConstraints)
-                            .then(fallbackStream => {
-                                localStream = fallbackStream;
-                                videoElement.srcObject = fallbackStream;
-                                enableFlash(fallbackStream);
-                            })
-                            .catch(fallbackErr => {
-                                console.error('Fallback camera error:', fallbackErr);
-                                statusDiv.textContent = 'Error accessing camera: ' + fallbackErr.message;
-                            });
-                    } else {
-                        statusDiv.textContent = 'Error accessing camera: ' + err.message;
-                    }
+                        // Start speech recognition even if camera fails
+                        if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+                            speechRecognition = initSpeechRecognition();
+                            speechRecognition.start();
+                        }
+                    });
                 });
         }
         
-        // Called when video has loaded and started playing
-        function onVideoPlayed() {
-            updateSVGViewBox();
-            startDecoding();
-            
-            // Add a message to indicate camera is active
-            statusDiv.textContent = "Camera active - scanning for barcodes...";
-            console.log("Video has loaded, starting barcode scanning");
-        }
-        
-        // Update SVG overlay to match video dimensions
-        function updateSVGViewBox() {
-            if (videoElement.videoWidth && videoElement.videoHeight) {
-                svgOverlay.setAttribute("viewBox", `0 0 ${videoElement.videoWidth} ${videoElement.videoHeight}`);
-            }
-        }
-        
-        // Start barcode detection
+        // Start barcode detection (for Android)
         function startDecoding() {
+            // Only scan if we have a detector and are in recognition mode and not on iOS
+            if (!barcodeDetector || !isRecognizing || isIOS) return;
+            
+            // Clear any existing interval first
             clearInterval(recognitionInterval);
             
-            // Implement a more reliable scanning system with averaging
-            let consecutiveResults = []; // To store recent scan results
-            const requiredConsistentScans = 3; // Number of consistent scans required
+            // For reliable scanning with averaging
+            let consecutiveResults = [];
+            const requiredConsistentScans = 2;
+            let decoding = false;
             
             recognitionInterval = setInterval(async () => {
-                if (!barcodeDetector || !isRecognizing) return;
+                if (decoding || !isRecognizing) return;
+                decoding = true;
                 
                 try {
-                    if (decoding) return;
-                    decoding = true;
-                    
                     // Make sure video is ready
-                    if (videoElement.readyState < 2) {
-                        decoding = false;
-                        return;
-                    }
-                    
-                    const barcodes = await barcodeDetector.detect(videoElement);
-                    
-                    if (barcodes.length > 0) {
-                        // Found a barcode
-                        const currentValue = barcodes[0].rawValue;
+                    if (videoElement.readyState >= 2) {
+                        const barcodes = await barcodeDetector.detect(videoElement);
                         
-                        // Add to recent results
-                        consecutiveResults.push(currentValue);
-                        
-                        // Only keep the most recent scans
-                        if (consecutiveResults.length > requiredConsistentScans) {
-                            consecutiveResults.shift();
-                        }
-                        
-                        // Draw the overlay for user feedback
-                        drawOverlay(barcodes);
-                        
-                        // Check if we have enough consistent results
-                        if (consecutiveResults.length >= requiredConsistentScans) {
-                            // Check if all recent results are the same
-                            const allMatch = consecutiveResults.every(
-                                value => value === consecutiveResults[0]
-                            );
+                        if (barcodes.length > 0) {
+                            const currentValue = barcodes[0].rawValue;
+                            consecutiveResults.push(currentValue);
                             
-                            if (allMatch) {
-                                console.log(`Confirmed barcode after ${requiredConsistentScans} consistent scans:`, currentValue);
+                            // Keep only the most recent scans
+                            if (consecutiveResults.length > requiredConsistentScans) {
+                                consecutiveResults.shift();
+                            }
+                            
+                            // Check if we have consistent results
+                            if (consecutiveResults.length >= requiredConsistentScans && 
+                                consecutiveResults.every(value => value === consecutiveResults[0])) {
                                 playSuccessBeep();
                                 displayResult('Barcode', currentValue);
                             }
-                        }
-                    } else {
-                        // Clear the overlay when no barcode detected
-                        svgOverlay.innerHTML = "";
-                        
-                        // Reset consecutive results if nothing detected
-                        if (consecutiveResults.length > 0) {
+                        } else {
+                            // Reset when no barcode detected
                             consecutiveResults = [];
                         }
                     }
-                    
-                    decoding = false;
                 } catch (error) {
-                    decoding = false;
-                    console.error('Error in barcode detection:', error);
-                }
-            }, 200); // Check frequently for best responsiveness
-        }
-        
-        // Detect barcodes in video
-        async function decode() {
-            if (!barcodeDetector || decoding || !isRecognizing) return;
-            
-            try {
-                decoding = true;
-                console.log("Attempting to detect barcode...");
-                
-                // Make sure video is playing and has dimensions
-                if (videoElement.readyState < 2 || !videoElement.videoWidth) {
-                    console.log("Video not ready yet");
-                    decoding = false;
-                    return;
-                }
-                
-                // Log video status for debugging
-                console.log(`Video dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}, readyState: ${videoElement.readyState}`);
-                
-                try {
-                    const barcodes = await barcodeDetector.detect(videoElement);
-                    console.log("Barcode detection result:", barcodes);
-                    
-                    drawOverlay(barcodes);
-                    
-                    if (barcodes.length > 0) {
-                        console.log("Barcode found:", barcodes[0].rawValue);
-                        playSuccessBeep();
-                        stopRecognition();
-                        displayResult('Barcode', barcodes[0].rawValue);
-                    }
-                } catch (detectionError) {
-                    console.error("Error in barcode detection:", detectionError);
+                    console.error('Barcode detection error:', error);
                 }
                 
                 decoding = false;
-            } catch (error) {
-                decoding = false;
-                console.error('Barcode detection process error:', error);
-            }
+            }, 200);
         }
         
-        // Draw barcode overlay on video - no visible rectangle
-        function drawOverlay(barcodes) {
-            // Clear any existing overlay
-            svgOverlay.innerHTML = "";
-        }
-        
-        // Create and play a success beep
+        // Play success beep
         function playSuccessBeep() {
             try {
-                // Create audio context
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 const audioCtx = new AudioContext();
-                
-                // Create oscillator for beep
                 const oscillator = audioCtx.createOscillator();
                 const gainNode = audioCtx.createGain();
                 
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // Higher frequency for distinct beep
-                
-                // Connect oscillator to gain node and gain node to audio output
+                oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
                 oscillator.connect(gainNode);
                 gainNode.connect(audioCtx.destination);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
                 
-                // Set volume
-                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); // Lower volume
-                
-                // Start oscillator and stop after 150ms
                 oscillator.start();
-                setTimeout(() => {
-                    oscillator.stop();
-                }, 150);
+                setTimeout(() => oscillator.stop(), 150);
                 
-                // Play a second beep after a short delay
                 setTimeout(() => {
                     const oscillator2 = audioCtx.createOscillator();
                     oscillator2.type = 'sine';
-                    oscillator2.frequency.setValueAtTime(1600, audioCtx.currentTime); // Higher pitch for second beep
+                    oscillator2.frequency.setValueAtTime(1600, audioCtx.currentTime);
                     oscillator2.connect(gainNode);
                     oscillator2.start();
                     setTimeout(() => oscillator2.stop(), 150);
                 }, 200);
             } catch (e) {
-                console.error("Error playing success beep:", e);
+                console.error("Error playing beep:", e);
             }
         }
         
@@ -754,78 +405,63 @@
         function startRecognition() {
             if (isRecognizing) return;
             
-            console.log("Starting recognition process");
             isRecognizing = true;
             home.style.display = "none";
             scannerContainer.style.display = "block";
             resultDiv.textContent = "";
             
-            // Hide camera view by default
-            videoContainer.style.display = "none";
-            cameraVisible = false;
-            toggleCameraButton.textContent = "Show Camera";
-            
-            // Force scanner container to show
-            scannerContainer.style.display = "block";
-            
-            // Show loading indicator
-            loadingDiv.style.display = "block";
-            loadingDiv.textContent = "Starting recognition...";
-            
-            // Initialize barcode detection first if available
-            if ('BarcodeDetector' in window) {
-                console.log("BarcodeDetector is available, initializing camera");
+            if (isIOS) {
+                // For iOS, update button text
+                toggleCameraButton.textContent = "Start iOS Scanner";
+                videoContainer.style.display = "none";
+                cameraVisible = false;
                 
-                try {
-                    // Re-initialize barcode detector to ensure it's fresh
-                    barcodeDetector = new BarcodeDetector({
-                        formats: ['ean_13', 'qr_code']
-                    });
-                    
-                    loadDevicesAndPlay();
-                    statusDiv.textContent = "Started camera. Scanning for barcodes...";
-                } catch (e) {
-                    console.error("Error initializing barcode detector:", e);
-                    statusDiv.textContent = "Error starting barcode scanner: " + e.message;
+                // Initialize speech recognition only
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    speechRecognition = initSpeechRecognition();
+                    speechRecognition.start();
+                    statusDiv.textContent = "Listening for voice input. Tap 'Start iOS Scanner' for barcode.";
+                } else {
+                    statusDiv.textContent = "Voice recognition not available. Tap 'Start iOS Scanner' for barcode.";
                 }
             } else {
-                console.log("BarcodeDetector is not available");
-                statusDiv.textContent = "Barcode detection not available in this browser.";
-            }
-            
-            // Initialize speech recognition after a slight delay
-            setTimeout(() => {
+                // For Android, use the Web API approach
+                videoContainer.style.display = "none";
+                cameraVisible = false;
+                toggleCameraButton.textContent = "Show Camera";
+                
+                // Initialize camera and barcode detection
+                startCamera();
+                
+                // Initialize speech recognition
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (SpeechRecognition && isRecognizing) {
-                    console.log("Starting speech recognition");
+                if (SpeechRecognition) {
                     speechRecognition = initSpeechRecognition();
-                    try {
-                        speechRecognition.start();
-                        statusDiv.textContent += " Listening for voice input...";
-                    } catch (e) {
-                        console.error("Error starting speech recognition:", e);
-                    }
-                } else {
-                    console.log("Speech recognition not available or recognition stopped");
+                    speechRecognition.start();
+                    statusDiv.textContent = "Listening for voice input...";
                 }
-            }, 500); // Short delay to prevent simultaneous API initialization
+            }
         }
         
         // Stop recognition process
         function stopRecognition() {
             isRecognizing = false;
             
-            // Stop barcode detection
+            // Stop barcode detection (for Android)
             clearInterval(recognitionInterval);
-            stop();
+            
+            // Stop camera (for Android)
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
             
             // Stop speech recognition
             if (speechRecognition) {
                 try {
                     speechRecognition.stop();
-                } catch (e) {
-                    console.error("Error stopping speech recognition:", e);
-                }
+                } catch (e) {}
             }
             
             // Show start screen
@@ -833,28 +469,23 @@
             home.style.display = "block";
         }
         
-        // Clean up resources
-        function stop() {
-            clearInterval(recognitionInterval);
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
-        }
-        
         // Display recognition result
         function displayResult(type, value) {
             // Stop the recognition
             isRecognizing = false;
             clearInterval(recognitionInterval);
-            stop();
             
+            // Stop camera (for Android)
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            
+            // Stop speech recognition
             if (speechRecognition) {
                 try {
                     speechRecognition.stop();
-                } catch (e) {
-                    console.error("Error stopping speech recognition:", e);
-                }
+                } catch (e) {}
             }
             
             // Return to home screen
@@ -862,17 +493,8 @@
             home.style.display = "block";
             
             // Display the result
-            resultDiv.style.display = "block";
             resultDiv.innerHTML = `<h3>${type} Detected:</h3><p style="font-size: 18px; font-weight: bold;">${value}</p>`;
-            
-            // Scroll to make result visible
-            resultDiv.scrollIntoView({ behavior: 'smooth' });
-            
-            // Update status
             statusDiv.textContent = `${type} detected successfully!`;
-            
-            // Log for debugging
-            console.log(`${type} detected:`, value);
         }
     </script>
 </body>
