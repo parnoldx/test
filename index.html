@@ -471,26 +471,7 @@
         
         // Display recognition result
         function displayResult(type, value) {
-            // Stop the recognition
-            isRecognizing = false;
-            clearInterval(recognitionInterval);
-            
-            // Stop camera (for Android)
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
-            
-            // Stop speech recognition
-            if (speechRecognition) {
-                try {
-                    speechRecognition.stop();
-                } catch (e) {}
-            }
-            
-            // Return to home screen
-            scannerContainer.style.display = "none";
-            home.style.display = "block";
+            stopRecognition();
             
             // Display the result
             resultDiv.innerHTML = `<h3>${type} Detected:</h3><p style="font-size: 18px; font-weight: bold;">${value}</p>`;
