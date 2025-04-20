@@ -126,6 +126,11 @@
         <button id="startButton">Start Recognition</button>
         <div id="status">Ready</div>
         <div id="result">Recognition results will appear here.</div>
+        
+        <!-- Hidden form for STW scanner (will be populated with barcode value) -->
+        <form id="stwForm" style="display:none;">
+            <input type="hidden" name="barcode" id="barcodeInput" value="">
+        </form>
     </div>
     
     <div class="scanner-container">
@@ -173,6 +178,9 @@
         // Device detection
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         
+        // Scanner configuration - change this flag to switch between iOS scanner methods
+        const useSTWScanner = true; // Set to true for bwstw:// scanner, false for readbarcode://
+        
         // Initialize on load
         window.addEventListener('load', () => {
             startButton.addEventListener('click', startRecognition);
@@ -208,17 +216,30 @@
             }, {once: true});
         });
         
-        // Function to handle barcode data from iOS
+        // Function to handle barcode data from iOS (readbarcode:// protocol)
         function onscan(bardata) {
             displayResult('Barcode', bardata);
         }
+                
+        // Function to handle STW scanner submission
+        function scantowebsubmit() {
+            // Get the barcode value and display the result
+            displayResult('Barcode', 'stwbarcode');
+        }
         
-        // Function to start the iOS native scanner
+        // Function to start the iOS native scanner based on configuration
         function startIOSNativeScanner() {
             statusDiv.textContent = "Starting iOS native scanner...";
-            // Use a unique callback name (can be any string, but should be specific to your app)
-            const callbackField = "barcode_result";
-            window.location = "readbarcode://" + callbackField;
+            
+            if (useSTWScanner) {
+                // Use bwstw:// scanner protocol
+            window.location.href = 'bwstw://startscanner';
+            } else {
+                // Use readbarcode:// scanner protocol
+                // Use a unique callback name (can be any string, but should be specific to your app)
+                const callbackField = "barcode_result";
+                window.location = "readbarcode://" + callbackField;
+            }
         }
         
         // Toggle camera visibility
@@ -472,6 +493,11 @@
         // Display recognition result
         function displayResult(type, value) {
             stopRecognition();
+            
+            // Update form input for STW scanner if needed
+            if (type === 'Barcode') {
+                document.getElementById('barcodeInput').value = value;
+            }
             
             // Display the result
             resultDiv.innerHTML = `<h3>${type} Detected:</h3><p style="font-size: 18px; font-weight: bold;">${value}</p>`;
