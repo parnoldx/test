@@ -177,10 +177,7 @@
         
         // Device detection
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        
-        // Scanner configuration - change this flag to switch between iOS scanner methods
-        const useSTWScanner = true; // Set to true for bwstw:// scanner, false for readbarcode://
-        
+                
         // Initialize on load
         window.addEventListener('load', () => {
             startButton.addEventListener('click', startRecognition);
@@ -219,27 +216,13 @@
         // Function to handle barcode data from iOS (readbarcode:// protocol)
         function onscan(bardata) {
             displayResult('Barcode', bardata);
-        }
-                
-        // Function to handle STW scanner submission
-        function scantowebsubmit() {
-            // Get the barcode value and display the result
-            displayResult('Barcode', 'stwbarcode');
-        }
-        
+        }        
         // Function to start the iOS native scanner based on configuration
         function startIOSNativeScanner() {
             statusDiv.textContent = "Starting iOS native scanner...";
-            
-            if (useSTWScanner) {
-                // Use bwstw:// scanner protocol
-            window.location.href = 'bwstw://startscanner';
-            } else {
-                // Use readbarcode:// scanner protocol
-                // Use a unique callback name (can be any string, but should be specific to your app)
-                const callbackField = "barcode_result";
-                window.location = "readbarcode://" + callbackField;
-            }
+            // Use readbarcode:// scanner protocol
+            const callbackField = "barcode_result";
+            window.location = "readbarcode://" + callbackField;
         }
         
         // Toggle camera visibility
