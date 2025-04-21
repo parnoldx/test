@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-C3 WebSocket Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        .counter-display {
+            text-align: center;
+            padding: 30px 0;
+        }
+        
+        .counter-value {
+            font-size: 72px;
+            font-weight: bold;
+            color: #2196F3;
+            margin: 10px 0;
+        }
+        
+        .control-panel {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #388E3C;
+        }
+        
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        button.reset {
+            background-color: #F44336;
+        }
+        
+        button.reset:hover {
+            background-color: #D32F2F;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background-color: #E8F5E9;
+            color: #388E3C;
+        }
+        
+        .status.disconnected {
+            background-color: #FFEBEE;
+            color: #D32F2F;
+        }
+        
+        .status.connecting {
+            background-color: #FFF8E1;
+            color: #FFA000;
+        }
+        
+        .connection-form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-C3 WebSocket Client</h1>
+        
+        <div class="connection-form">
+            <input type="text" id="esp-address" placeholder="ESP32 Adresse (z.B. 192.168.1.100 oder pauna.local)" value="pauna.local">
+            <button id="connect-btn" onclick="connectToESP()">Verbinden</button>
+        </div>
+        
+        <div class="counter-display">
+            <h2>Weight</h2>
+            <div class="counter-value" id="counter">--</div>
+        </div>
+        
+        <div class="control-panel">
+            <button class="reset" id="reset-btn" onclick="resetCounter()" disabled>Tare</button>
+        </div>
+        
+        <div class="status disconnected" id="status">
+            Nicht verbunden
+        </div>
+    </div>
+    
+    <div class="footer">
+        ESP32-C3 WebSocket Client &copy; 2024
+    </div>
+
+    <script>
+        // DOM-Elemente
+        const counterElement = document.getElementById('counter');
+        const statusElement = document.getElementById('status');
+        const resetButton = document.getElementById('reset-btn');
+        const connectButton = document.getElementById('connect-btn');
+        const espAddressInput = document.getElementById('esp-address');
+        
+        // WebSocket-Verbindung
+        let ws = null;
+        let reconnectTimer = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 3;
+        
+        // WebSocket-Verbindung herstellen
+        function connectToESP() {
+            const address = espAddressInput.value.trim();
+            
+            if (!address) {
+                alert('Bitte gib die IP-Adresse oder den Hostnamen des ESP32 ein.');
+                return;
+            }
+            
+            // Bestehende Verbindung schließen
+            if (ws) {
+                ws.close();
+            }
+            
+            // Status aktualisieren
+            updateStatus('Verbinde...', 'connecting');
+            connectButton.disabled = true;
+            
+            try {
+                // WebSocket-URL bilden (immer Port 81 verwenden)
+                const wsUrl = `ws://${address}:81`;
+                console.log(`Versuche Verbindung zu: ${wsUrl}`);
+                
+                // Neue WebSocket-Verbindung erstellen
+                ws = new WebSocket(wsUrl);
+                
+                // Event-Handler zuweisen
+                ws.onopen = handleOpen;
+                ws.onclose = handleClose;
+                ws.onerror = handleError;
+                ws.onmessage = handleMessage;
+            } catch (error) {
+                console.error('Fehler beim Erstellen der WebSocket-Verbindung:', error);
+                handleError(error);
+            }
+        }
+        
+        // WebSocket-Event-Handlers
+        function handleOpen(event) {
+            console.log('WebSocket-Verbindung hergestellt');
+            reconnectAttempts = 0;
+            
+            // UI aktualisieren
+            updateStatus('Verbunden', 'connected');
+            resetButton.disabled = false;
+            connectButton.disabled = false;
+        }
+        
+        function handleClose(event) {
+            console.log('WebSocket-Verbindung geschlossen');
+            
+            // UI aktualisieren
+            updateStatus('Verbindung getrennt', 'disconnected');
+            resetButton.disabled = true;
+            connectButton.disabled = false;
+            
+            // Counter-Anzeige zurücksetzen
+            counterElement.textContent = '--';
+        }
+        
+        function handleError(event) {
+            console.error('WebSocket-Fehler:', event);
+            
+            // UI aktualisieren
+            updateStatus('Verbindungsfehler', 'disconnected');
+            resetButton.disabled = true;
+            connectButton.disabled = false;
+            
+            // Automatischer Wiederverbindungsversuch
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                updateStatus(`Verbindungsversuch ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in 3s...`, 'connecting');
+                
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(() => {
+                    connectToESP();
+                }, 3000);
+            }
+        }
+        
+        function handleMessage(event) {
+           // console.log('Nachricht vom ESP32 erhalten:', event.data);
+            
+            try {
+                // JSON-Daten parsen
+                const data = JSON.parse(event.data);
+                
+                // Counter aktualisieren
+                if (data.hasOwnProperty('weight')) {
+                    counterElement.textContent = data.weight;
+                }
+            } catch (error) {
+                console.error('Fehler beim Verarbeiten der Nachricht:', error);
+            }
+        }
+        
+        // Counter zurücksetzen
+        function resetCounter() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send('tare');
+            }
+        }
+        
+        // Status-UI aktualisieren
+        function updateStatus(message, statusClass) {
+            statusElement.textContent = message;
+            statusElement.className = `status ${statusClass}`;
+        }
+        
+        // Event-Listener für Enter-Taste im Eingabefeld
+        espAddressInput.addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                connectToESP();
+            }
+        });
+    </script>
+</body>
+</html>
